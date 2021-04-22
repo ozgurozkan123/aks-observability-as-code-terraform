@@ -19,6 +19,9 @@ stages:
               ARM_CLIENT_SECRET: $(armClientSecret)
               ARM_CLIENT_ID: $(armClientId)
               ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
+              STORAGE_ACCOUNT_NAME: $(uniqueStorageName)
+              CONTAINER_NAME: '$(uniqueStorageName)cont'
+              RG_NAME: '$(uniqueStorageName)-rg'
             inputs:
               targetType: 'inline'
               script: |
@@ -27,6 +30,9 @@ stages:
                 echo client_id = \"$ARM_CLIENT_ID\" >> terraform.tfvars
                 echo client_secret = \"$ARM_CLIENT_SECRET\" >> terraform.tfvars
                 echo tenant_name = \"$ARM_TENANT_ID\" >> terraform.tfvars
+                echo resource_group_name = \"$ARM_TENANT_ID\" >> terraform.tfvars
+                echo storage_account_name = \"$ARM_TENANT_ID\" >> terraform.tfvars
+                echo container_name = \"$ARM_TENANT_ID\" >> terraform.tfvars
           - publish: ./terraform.tfvars
             artifact: 'tfvars'
             displayName: Publish generated tfvars file
@@ -35,97 +41,106 @@ stages:
     jobs:
       - job: TerraformInstaller
         steps:
-        - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
-          inputs:
-            terraformVersion: '0.15.0'
-  - stage: TerraformInitValidatePlan 
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+            inputs:
+              terraformVersion: '0.15.0'
+  - stage: TerraformInitValidatePlan
     displayName: Terraform Init
     jobs:
       - job: TerraformInitValidatePlan
         steps:
-        - download: current
-          artifact: 'tfvars'
-          displayName: Download generated tfvars file
-        - task: TerraformCLI@0
-          env:
-                DATADOG_API_KEY: $(datadogApiKey)
-                DATADOG_APP_KEY: $(datadogAppKey)
-                ARM_TENANT_ID: $(armTenantId)
-                ARM_CLIENT_SECRET: $(armClientSecret)
-                ARM_CLIENT_ID: $(armClientId)
-                ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
-          inputs:
-            command: 'init'
-            backendType: 'azurerm'
-            backendServiceArm: 'Pay-As-You-Go(b5cf1a86-4412-4c53-8835-6f56a8258a58)'
-            ensureBackend: true
-            backendAzureRmResourceGroupName: 'tf-pollinate-rg'
-            backendAzureRmResourceGroupLocation: 'westus2'
-            backendAzureRmStorageAccountName: 'tfpollinatestorage'
-            backendAzureRmContainerName: 'tf-datadog-k8s-pollinate'
-            backendAzureRmKey: 'tf.state'
-            allowTelemetryCollection: true
-        - task: TerraformTaskV1@0
-          inputs:
-            provider: 'azurerm'
-            command: 'validate'
-        - task: TerraformTaskV1@0
-          env:
-            DATADOG_API_KEY: $(datadogApiKey)
-            DATADOG_APP_KEY: $(datadogAppKey)
-            ARM_TENANT_ID: $(armTenantId)
-            ARM_CLIENT_SECRET: $(armClientSecret)
-            ARM_CLIENT_ID: $(armClientId)
-            ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
-          inputs:
-            provider: 'azurerm'
-            command: 'plan'
-            commandOptions: '-out=tfplan -input=false -var-file=$(Pipeline.Workspace)/tfvars/terraform.tfvars'
-            environmentServiceNameAzureRM: 'Pay-As-You-Go(b5cf1a86-4412-4c53-8835-6f56a8258a58)'
-        - publish: ./
-          artifact: 'terraform-archive'
-          displayName: Publish Terraform archive
-  - stage: TerraformApply 
+          - download: current
+            artifact: 'tfvars'
+            displayName: Download generated tfvars file
+          - task: TerraformCLI@0
+            env:
+              DATADOG_API_KEY: $(datadogApiKey)
+              DATADOG_APP_KEY: $(datadogAppKey)
+              ARM_TENANT_ID: $(armTenantId)
+              ARM_CLIENT_SECRET: $(armClientSecret)
+              ARM_CLIENT_ID: $(armClientId)
+              ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
+              STORAGE_ACCOUNT_NAME: $(uniqueStorageName)
+              CONTAINER_NAME: $(uniqueStorageName)cont
+              RG_NAME: $(uniqueStorageName)-rg
+            inputs:
+              command: 'init'
+              backendType: 'azurerm'
+              backendServiceArm: '$(serviceConnection)'
+              ensureBackend: true
+              backendAzureRmResourceGroupName: 'uniqueStorageName-rg'
+              backendAzureRmResourceGroupLocation: 'westus2'
+              backendAzureRmStorageAccountName: '$(uniqueStorageName)'
+              backendAzureRmContainerName: '$(uniqueStorageName)cont'
+              backendAzureRmKey: 'tf.state'
+              allowTelemetryCollection: true
+          - task: TerraformTaskV1@0
+            inputs:
+              provider: 'azurerm'
+              command: 'validate'
+          - task: TerraformTaskV1@0
+            env:
+              DATADOG_API_KEY: $(datadogApiKey)
+              DATADOG_APP_KEY: $(datadogAppKey)
+              ARM_TENANT_ID: $(armTenantId)
+              ARM_CLIENT_SECRET: $(armClientSecret)
+              ARM_CLIENT_ID: $(armClientId)
+              ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
+              STORAGE_ACCOUNT_NAME: $(uniqueStorageName)
+              CONTAINER_NAME: '$(uniqueStorageName)cont'
+              RG_NAME: '$(uniqueStorageName)-rg'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              commandOptions: '-out=tfplan -input=false -var-file=$(Pipeline.Workspace)/tfvars/terraform.tfvars'
+              environmentServiceNameAzureRM: '$(serviceConnection)'
+          - publish: ./
+            artifact: 'terraform-archive'
+            displayName: Publish Terraform archive
+  - stage: TerraformApply
     displayName: Terraform Apply
     jobs:
       - job: TerraformApply
         steps:
-        - checkout: none
-        - task: DownloadPipelineArtifact@2
-          displayName: Download Terraform archive
-          inputs:
-            artifactName: 'terraform-archive'
-            path: $(Build.SourcesDirectory)
-        - task: Bash@3
-          displayName: Grant read permission to terraform files
-          inputs:
-            targetType: 'inline'
-            script: 'chmod -R 755 /home/vsts/work/1/s/.terraform/'
-        - download: current
-          artifact: 'tfvars'
-          displayName: Download generated tfvars file
-        - task: TerraformCLI@0
-          env:
-                DATADOG_API_KEY: $(datadogApiKey)
-                DATADOG_APP_KEY: $(datadogAppKey)
-                ARM_TENANT_ID: $(armTenantId)
-                ARM_CLIENT_SECRET: $(armClientSecret)
-                ARM_CLIENT_ID: $(armClientId)
-                ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
-          inputs:
-            command: 'init'
-            backendType: 'azurerm'
-            backendServiceArm: 'Pay-As-You-Go(b5cf1a86-4412-4c53-8835-6f56a8258a58)'
-            ensureBackend: true
-            backendAzureRmResourceGroupName: 'tf-pollinate-rg'
-            backendAzureRmResourceGroupLocation: 'westus2'
-            backendAzureRmStorageAccountName: 'tfpollinatestorage'
-            backendAzureRmContainerName: 'tf-datadog-k8s-pollinate'
-            backendAzureRmKey: 'tf.state'
-            allowTelemetryCollection: true
-        - task: TerraformTaskV1@0
-          inputs:
-            provider: 'azurerm'
-            command: 'apply'
-            commandOptions: '-var-file=$(Pipeline.Workspace)/tfvars/terraform.tfvars'
-            environmentServiceNameAzureRM: 'Pay-As-You-Go(b5cf1a86-4412-4c53-8835-6f56a8258a58)'
+          - checkout: none
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Terraform archive
+            inputs:
+              artifactName: 'terraform-archive'
+              path: $(Build.SourcesDirectory)
+          - task: Bash@3
+            displayName: Grant read permission to terraform files
+            inputs:
+              targetType: 'inline'
+              script: 'chmod -R 755 /home/vsts/work/1/s/.terraform/'
+          - download: current
+            artifact: 'tfvars'
+            displayName: Download generated tfvars file
+          - task: TerraformCLI@0
+            env:
+              DATADOG_API_KEY: $(datadogApiKey)
+              DATADOG_APP_KEY: $(datadogAppKey)
+              ARM_TENANT_ID: $(armTenantId)
+              ARM_CLIENT_SECRET: $(armClientSecret)
+              ARM_CLIENT_ID: $(armClientId)
+              ARM_SUBSCRIPTION_ID: $(armSubscriptionId)
+              STORAGE_ACCOUNT_NAME: $(uniqueStorageName)
+              CONTAINER_NAME: '$(uniqueStorageName)cont'
+              RG_NAME: '$(uniqueStorageName)-rg'
+            inputs:
+              command: 'init'
+              backendType: 'azurerm'
+              backendServiceArm: '$(serviceConnection)'
+              ensureBackend: true
+              backendAzureRmResourceGroupName: 'uniqueStorageName-rg'
+              backendAzureRmResourceGroupLocation: 'westus2'
+              backendAzureRmStorageAccountName: '$(uniqueStorageName)'
+              backendAzureRmContainerName: '$(uniqueStorageName)cont'
+              backendAzureRmKey: 'tf.state'
+              allowTelemetryCollection: true
+          - task: TerraformTaskV1@0
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              commandOptions: '-var-file=$(Pipeline.Workspace)/tfvars/terraform.tfvars'
+              environmentServiceNameAzureRM: '$(serviceConnection)'
